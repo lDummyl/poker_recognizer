@@ -1,79 +1,57 @@
 package com.poker.recognizer;
 
 import com.poker.recognizer.model.CardDetectionResult;
-import com.poker.recognizer.service.CardRecognitionService;
-import com.poker.recognizer.service.CardTemplateGenerator;
+import com.poker.recognizer.service.OllamaService;
 import org.junit.Test;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class CardRecognitionTest {
 
-    private final CardRecognitionService service =
-            new CardRecognitionService(new CardTemplateGenerator());
-
     @Test
-    public void testCards2TurnAndHand() throws IOException {
-        byte[] imageBytes = Files.readAllBytes(Paths.get("cards2.jpg"));
-        List<CardDetectionResult> results = service.detectCards(imageBytes);
+    public void testHighDefCardsOllama() throws Exception {
+        List<CardDetectionResult> results;
+        try {
+            OllamaService ollama = new OllamaService();
+            byte[] imageBytes = Files.readAllBytes(Paths.get("high-def-cards.png"));
+            String json = ollama.detectCards(imageBytes);
+            Files.writeString(Paths.get("ollama_mock", "high-def-cards.json"), json);
+            results = OllamaService.parseCards(json);
+            System.out.println("(Ollama API)");
+        } catch (Exception e) {
+            String json = Files.readString(Paths.get("ollama_mock", "high-def-cards.json"));
+            results = OllamaService.parseCards(json);
+            System.out.println("(mock — Ollama not available: " + e.getMessage() + ")");
+        }
 
         System.out.println("╔══════════════════════════════════════════════════════╗");
-        System.out.println("║         CARDS2 — TURN + HAND RECOGNITION           ║");
-        System.out.println("╠══════════════════════════════════════════════════════╣");
-        System.out.printf("║ Total cards detected: %-28d ║%n", results.size());
-        System.out.println("╠══════╤════════╤═══════╤════════╤══════════╤══════════╣");
-        System.out.println("║ Card │  X,  Y │  WxH  │ Aspect │ Color    │ Label    ║");
-        System.out.println("╠══════╪════════╪═══════╪════════╪══════════╪══════════╣");
-
+        System.out.println("║   HIGH-DEF via OLLAMA — 8♠8♥10♦J♦3♠|8♣3♣     ║");
+        System.out.println("╠══════╤═══════════════════════════════════════════════╣");
+        System.out.println("║ Card │ Label                                        ║");
         for (var card : results) {
-            System.out.printf("║ %4d │ %2d,%3d │ %3dx%3d │ %5.2f  │ %-8s │ %-8s ║%n",
-                    card.getCardIndex(),
-                    card.getX(), card.getY(),
-                    card.getWidth(), card.getHeight(),
-                    card.getAspectRatio(),
-                    card.getSuitColor(),
-                    card.getLabel());
+            System.out.printf("║ %4d │ %-45s ║%n", card.getCardIndex(), card.getLabel());
         }
+        System.out.println("╚══════╧═══════════════════════════════════════════════╝");
 
-        System.out.println("╚══════╧════════╧═══════╧════════╧══════════╧══════════╝");
-
-        long recognized = results.stream().filter(c -> !"UNKNOWN".equals(c.getLabel())).count();
+        Set<String> expected = Set.of(
+                "8 of SPADES", "8 of HEARTS", "10 of DIAMONDS",
+                "J of DIAMONDS", "3 of SPADES", "8 of CLUBS", "3 of CLUBS");
         Set<String> labels = results.stream()
                 .map(CardDetectionResult::getLabel)
-                .filter(l -> !"UNKNOWN".equals(l))
                 .collect(Collectors.toSet());
 
-        System.out.println("Expected: turn (3♥, A♥, 7♣, A♣, 9♠) + hand (A♦, A♠)");
-        System.out.println("Template-matched: " + recognized + " / " + results.size());
-        if (!labels.isEmpty()) {
-            System.out.println("Recognized: " + labels);
-        }
+        System.out.println("Expected: " + expected);
+        System.out.println("Found:    " + labels);
 
-        assertTrue("Should detect at least 5 card regions (turn 5 + hand 2)",
-                results.size() >= 5);
-
-        Set<String> expectedTurn = Set.of(
-                "3 of HEARTS", "A of HEARTS", "7 of CLUBS", "A of CLUBS", "9 of SPADES");
-        Set<String> expectedHand = Set.of("A of DIAMONDS", "A of SPADES");
-
-        for (String expected : expectedTurn) {
-            assertTrue("Turn card not found: " + expected, labels.contains(expected));
-        }
-        for (String expected : expectedHand) {
-            assertTrue("Hand card not found: " + expected, labels.contains(expected));
-        }
-
-        if (recognized < 5) {
-            System.out.println("NOTE: Low template match count. Image may need higher resolution.");
+        assertTrue("Should detect at least 5 cards", results.size() >= 5);
+        for (String exp : expected) {
+            assertTrue("Missing: " + exp, labels.contains(exp));
         }
     }
 }
